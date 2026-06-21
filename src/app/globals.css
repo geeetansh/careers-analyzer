@@ -8,8 +8,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-reading: var(--font-reading);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -131,52 +132,54 @@
 }
 
 .job-listing-content {
-  @apply text-[15px] leading-7 text-foreground;
+  font-family: var(--font-reading), var(--font-sans), system-ui, sans-serif;
+  @apply text-[1.25rem] leading-[1.9] text-foreground;
 }
 
 .job-listing-content h1,
 .job-listing-content h2,
 .job-listing-content h3,
 .job-listing-content h4 {
-  @apply mt-8 mb-3 font-bold tracking-tight text-foreground first:mt-0;
+  @apply mt-10 mb-4 font-bold tracking-wide text-foreground first:mt-0;
 }
 
 .job-listing-content h1 {
-  @apply text-2xl;
+  @apply text-2xl leading-tight;
 }
 
 .job-listing-content h2 {
-  @apply text-xl;
+  @apply text-xl leading-snug;
 }
 
 .job-listing-content h3,
 .job-listing-content h4 {
-  @apply text-lg;
+  @apply text-lg leading-snug;
 }
 
 .job-listing-content p {
-  @apply my-4 text-[15px] leading-7 text-foreground/90;
+  @apply my-5 text-lg leading-[1.85] tracking-wide text-foreground/90;
 }
 
 .job-listing-content ul,
 .job-listing-content ol {
-  @apply my-5 ml-5 space-y-2.5;
+  @apply my-6 ml-2 space-y-4;
 }
 
 .job-listing-content ul {
-  @apply list-disc;
+  @apply list-none;
 }
 
 .job-listing-content ol {
-  @apply list-decimal;
+  @apply list-decimal ml-5;
 }
 
 .job-listing-content li {
-  @apply pl-1 text-[15px] leading-7 text-foreground/90;
+  @apply relative pl-8 text-lg leading-[1.85] tracking-wide text-foreground/90;
 }
 
-.job-listing-content li::marker {
-  @apply text-primary;
+.job-listing-content ul > li::before {
+  content: "";
+  @apply absolute top-[0.7em] left-2 size-2 rounded-full bg-primary/70;
 }
 
 .job-listing-content strong,
@@ -212,4 +215,16 @@
 .reading-panel {
   background: color-mix(in oklab, var(--card) 88%, white 12%);
   backdrop-filter: blur(10px);
+}
+
+.reading-surface {
+  font-family: var(--font-reading), var(--font-sans), system-ui, sans-serif;
+}
+
+.readable-chunk {
+  font-family: var(--font-reading), var(--font-sans), system-ui, sans-serif;
+}
+
+.reading-focus-bg {
+  background: #faf9f7;
 }

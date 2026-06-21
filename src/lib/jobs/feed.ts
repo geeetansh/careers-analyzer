@@ -1,11 +1,14 @@
 import type { Company, JobListing } from "@/lib/types/company";
 import { getCompanyRank } from "@/lib/csv";
 import { categoryLabel, getJobCategory, type JobCategory } from "@/lib/jobs/categories";
+import type { RoleStatus } from "@/lib/jobs/role-status";
 import {
   getAllAnalyses,
-  getReadRoleIds,
+  getRoleStatuses,
   makeFeedId,
 } from "@/lib/storage/db";
+
+export type { RoleStatus } from "@/lib/jobs/role-status";
 
 export interface FeedRole {
   feedId: string;
@@ -15,22 +18,24 @@ export interface FeedRole {
   categoryLabel: string;
   job: JobListing;
   boardSlug?: string;
-  read: boolean;
+  status: RoleStatus;
 }
 
 export interface FeedStats {
   total: number;
   cs: number;
   product: number;
-  read: number;
   unread: number;
+  read: number;
+  liked: number;
+  disliked: number;
   companiesWithRoles: number;
 }
 
 export async function buildFeed(companies: Company[]): Promise<FeedRole[]> {
-  const [analyses, readIds] = await Promise.all([
+  const [analyses, statusById] = await Promise.all([
     getAllAnalyses(),
-    getReadRoleIds(),
+    getRoleStatuses(),
   ]);
 
   const rankByCompany = new Map(
@@ -55,7 +60,7 @@ export async function buildFeed(companies: Company[]): Promise<FeedRole[]> {
         categoryLabel: categoryLabel(category),
         job,
         boardSlug: analysis.result.boardSlug,
-        read: readIds.has(feedId),
+        status: statusById.get(feedId) ?? "unread",
       });
     }
   }
@@ -72,7 +77,7 @@ export function filterFeed(
   options: {
     category?: JobCategory | "all";
     query?: string;
-    unreadOnly?: boolean;
+    status?: RoleStatus;
     companyName?: string;
   },
 ) {
@@ -82,7 +87,7 @@ export function filterFeed(
     if (options.category && options.category !== "all" && role.category !== options.category) {
       return false;
     }
-    if (options.unreadOnly && role.read) return false;
+    if (options.status && role.status !== options.status) return false;
     if (options.companyName && role.companyName !== options.companyName) return false;
     if (!needle) return true;
 
@@ -101,14 +106,15 @@ export function filterFeed(
 
 export function getFeedStats(roles: FeedRole[]): FeedStats {
   const companies = new Set(roles.map((role) => role.companyName));
-  const read = roles.filter((role) => role.read).length;
 
   return {
     total: roles.length,
     cs: roles.filter((role) => role.category === "cs").length,
     product: roles.filter((role) => role.category === "product").length,
-    read,
-    unread: roles.length - read,
+    unread: roles.filter((role) => role.status === "unread").length,
+    read: roles.filter((role) => role.status === "read").length,
+    liked: roles.filter((role) => role.status === "liked").length,
+    disliked: roles.filter((role) => role.status === "disliked").length,
     companiesWithRoles: companies.size,
   };
 }

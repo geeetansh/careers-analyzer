@@ -5,9 +5,10 @@ import type {
   JobSummary,
 } from "@/lib/types/company";
 import type { AnalysisCacheEntry } from "@/lib/storage/analysis-cache";
+import type { RoleStatus } from "@/lib/jobs/role-status";
 
 const DB_NAME = "careers-analyzer";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface StoredJobDetail extends JobDetail {
   companyName: string;
@@ -46,6 +47,10 @@ interface CareersDB extends DBSchema {
     key: string;
     value: { feedId: string; readAt: string };
   };
+  roleStatuses: {
+    key: string;
+    value: { feedId: string; status: RoleStatus; updatedAt: string };
+  };
   syncState: {
     key: string;
     value: BulkSyncState;
@@ -69,6 +74,9 @@ function getDb() {
         }
         if (!db.objectStoreNames.contains("readRoles")) {
           db.createObjectStore("readRoles", { keyPath: "feedId" });
+        }
+        if (!db.objectStoreNames.contains("roleStatuses")) {
+          db.createObjectStore("roleStatuses", { keyPath: "feedId" });
         }
         if (!db.objectStoreNames.contains("syncState")) {
           db.createObjectStore("syncState");
@@ -121,20 +129,86 @@ export async function getJobSummary(feedId: string) {
   return db.get("jobSummaries", feedId);
 }
 
-export async function markRoleRead(feedId: string) {
+export async function getAllJobSummaries() {
   const db = await getDb();
-  await db.put("readRoles", { feedId, readAt: new Date().toISOString() });
+  return db.getAll("jobSummaries");
+}
+
+export interface RoleStatusRow {
+  feedId: string;
+  status: RoleStatus;
+  updatedAt: string;
+}
+
+export async function getAllRoleStatusRows(): Promise<RoleStatusRow[]> {
+  const db = await getDb();
+  return db.getAll("roleStatuses");
+}
+
+export async function setRoleStatus(feedId: string, status: RoleStatus) {
+  const db = await getDb();
+  if (status === "unread") {
+    await db.delete("roleStatuses", feedId);
+    return;
+  }
+
+  await db.put("roleStatuses", {
+    feedId,
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function getRoleStatuses() {
+  const db = await getDb();
+  const rows = await db.getAll("roleStatuses");
+  return new Map(rows.map((row) => [row.feedId, row.status]));
+}
+
+export async function markRoleRead(feedId: string) {
+  await setRoleStatus(feedId, "read");
 }
 
 export async function markRoleUnread(feedId: string) {
-  const db = await getDb();
-  await db.delete("readRoles", feedId);
+  await setRoleStatus(feedId, "unread");
 }
 
+/** @deprecated Use getRoleStatuses instead */
 export async function getReadRoleIds() {
+  const statuses = await getRoleStatuses();
+  const readIds = new Set<string>();
+  for (const [feedId, status] of statuses) {
+    if (status === "read" || status === "liked" || status === "disliked") {
+      readIds.add(feedId);
+    }
+  }
+  return readIds;
+}
+
+export async function migrateRoleStatuses() {
+  if (typeof window === "undefined") return;
+  if (window.localStorage.getItem("careers-analyzer:role-statuses-migrated")) {
+    return;
+  }
+
   const db = await getDb();
-  const rows = await db.getAll("readRoles");
-  return new Set(rows.map((row) => row.feedId));
+  const readRows = await db.getAll("readRoles");
+  if (readRows.length > 0) {
+    const tx = db.transaction("roleStatuses", "readwrite");
+    for (const row of readRows) {
+      const existing = await tx.store.get(row.feedId);
+      if (!existing) {
+        await tx.store.put({
+          feedId: row.feedId,
+          status: "read",
+          updatedAt: row.readAt,
+        });
+      }
+    }
+    await tx.done;
+  }
+
+  window.localStorage.setItem("careers-analyzer:role-statuses-migrated", "1");
 }
 
 export async function getSyncState() {
@@ -185,12 +259,12 @@ export async function migrateLocalStorageToIndexedDB() {
 
 export async function getCacheStats() {
   const db = await getDb();
-  const [analyses, details, summaries, read] = await Promise.all([
+  const [analyses, details, summaries, statuses] = await Promise.all([
     db.count("analyses"),
     db.count("jobDetails"),
     db.count("jobSummaries"),
-    db.count("readRoles"),
+    db.count("roleStatuses"),
   ]);
 
-  return { analyses, details, summaries, read };
+  return { analyses, details, summaries, read: statuses };
 }

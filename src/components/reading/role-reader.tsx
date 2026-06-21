@@ -1,72 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  BookOpen,
   ChevronLeft,
   ChevronRight,
-  Check,
-  Circle,
   ExternalLink,
+  Heart,
+  List,
   Loader2,
-  Sparkles,
+  ThumbsDown,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { FeedRole } from "@/lib/jobs/feed";
 import type { JobSummary } from "@/lib/types/company";
 import {
   getJobDetail,
   getJobSummary,
-  markRoleRead,
-  markRoleUnread,
   saveJobDetail,
   saveJobSummary,
+  setRoleStatus,
   type StoredJobDetail,
 } from "@/lib/storage/db";
 import { cn } from "@/lib/utils";
 import { JobListingContent } from "@/components/reading/job-listing-content";
+import { ReadableText } from "@/components/reading/readable-text";
 import { looksEntityEncoded } from "@/lib/html/decode-listing-html";
 
 interface RoleReaderProps {
   role: FeedRole | null;
-  onReadChange: () => void;
+  queuePosition: { current: number; total: number } | null;
+  onStatusChange: () => void;
   onPrevious?: () => void;
   onNext?: () => void;
   hasPrevious?: boolean;
   hasNext?: boolean;
+  onToggleQueue?: () => void;
+  focusMode?: boolean;
+  onSaved?: () => void;
 }
 
-function SummaryCard({ title, body }: { title: string; body: string }) {
+function SummarySection({
+  title,
+  body,
+  asList = false,
+}: {
+  title: string;
+  body: string;
+  asList?: boolean;
+}) {
   return (
-    <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 shadow-sm">
-      <div className="mb-3 flex items-center gap-2">
-        <Sparkles className="size-4 text-violet-600 dark:text-violet-400" />
-        <h3 className="text-sm font-bold tracking-tight text-foreground">{title}</h3>
-      </div>
-      <p className="text-[15px] leading-7 text-foreground/90 whitespace-pre-wrap">
-        {body}
-      </p>
-    </div>
+    <section className="space-y-4">
+      <h2 className="text-2xl font-bold text-foreground md:text-3xl">{title}</h2>
+      <ReadableText text={body} as={asList ? "list" : "paragraphs"} />
+    </section>
   );
 }
 
 export function RoleReader({
   role,
-  onReadChange,
+  queuePosition,
+  onStatusChange,
   onPrevious,
   onNext,
   hasPrevious,
   hasNext,
+  onToggleQueue,
+  focusMode,
+  onSaved,
 }: RoleReaderProps) {
+  const readerTopRef = useRef<HTMLElement>(null);
   const [loading, setLoading] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [detail, setDetail] = useState<StoredJobDetail | null>(null);
   const [summary, setSummary] = useState<JobSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showListing, setShowListing] = useState(true);
 
   useEffect(() => {
     if (!role) {
@@ -114,7 +122,6 @@ export function RoleReader({
       setLoading(true);
       setSummaryLoading(false);
       setError(null);
-      setShowListing(true);
       setSummary(null);
 
       try {
@@ -212,174 +219,192 @@ export function RoleReader({
     };
   }, [role]);
 
+  useEffect(() => {
+    if (!role?.feedId) return;
+    readerTopRef.current?.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [role?.feedId]);
+
   if (!role) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-8 text-center">
-        <div className="flex size-16 items-center justify-center rounded-2xl bg-muted">
-          <BookOpen className="size-8 text-muted-foreground" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-xl font-semibold">Pick a role to start reading</h2>
-          <p className="max-w-md text-sm text-muted-foreground">
-            Select a Customer Success or Product listing from the queue. Use ↑ ↓
-            or j / k to move between roles quickly.
-          </p>
-        </div>
+      <div className="flex items-center justify-center p-12">
+        <p className="text-2xl font-medium text-foreground">
+          Pick a role from the queue
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border/60 px-6 py-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant="secondary"
-                className={cn(
-                  "rounded-full px-3",
-                  role.category === "cs"
-                    ? "bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                    : "bg-violet-500/10 text-violet-700 dark:text-violet-300",
-                )}
-              >
-                {role.categoryLabel}
-              </Badge>
-              {role.read ? (
-                <Badge variant="outline" className="rounded-full">
-                  <Check className="mr-1 size-3" />
-                  Read
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="rounded-full">
-                  <Circle className="mr-1 size-3" />
-                  Unread
-                </Badge>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-                {role.companyName}
-              </p>
-              <h1 className="text-3xl font-bold tracking-tight text-balance text-foreground">
-                {role.job.title}
-              </h1>
-            </div>
-            <div className="flex flex-wrap gap-x-2 gap-y-1 text-sm font-medium text-foreground/75">
-              <span>{role.job.location}</span>
-              <span>·</span>
-              <span>{role.job.department}</span>
-              {role.job.employmentType !== "—" ? (
-                <>
-                  <span>·</span>
-                  <span>{role.job.employmentType}</span>
-                </>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
+    <article ref={readerTopRef} className="bg-[#faf9f7] dark:bg-background scroll-mt-4">
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-white px-4 py-2.5 dark:bg-card">
+        <div className="flex min-w-0 items-center gap-2">
+          {focusMode && onToggleQueue ? (
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
-                if (role.read) {
-                  await markRoleUnread(role.feedId);
-                } else {
-                  await markRoleRead(role.feedId);
-                }
-                onReadChange();
-              }}
+              className="shrink-0"
+              onClick={onToggleQueue}
             >
-              {role.read ? "Mark unread" : "Mark read"}
+              <List className="mr-1.5 size-4" />
+              Queue
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <a href={role.job.url} target="_blank" rel="noreferrer">
-                Original
-                <ExternalLink className="ml-2 size-3.5" />
-              </a>
-            </Button>
-          </div>
+          ) : null}
+          {queuePosition ? (
+            <span className="truncate text-sm font-semibold text-foreground">
+              {queuePosition.current} / {queuePosition.total}
+            </span>
+          ) : null}
         </div>
+        <Button variant="ghost" size="sm" className="shrink-0" asChild>
+          <a href={role.job.url} target="_blank" rel="noreferrer">
+            Original post
+            <ExternalLink className="ml-1.5 size-3.5" />
+          </a>
+        </Button>
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="space-y-5 px-6 py-6">
+      <header className="border-b border-border bg-white px-6 py-5 dark:bg-card">
+        <p className="text-lg font-bold text-foreground">{role.companyName}</p>
+        <h1 className="mt-1 text-2xl font-bold leading-snug text-foreground md:text-3xl">
+          {role.job.title}
+        </h1>
+        <p className="mt-2 text-base font-medium text-foreground/80">
+          {role.job.location}
+          {role.job.department !== "—" ? ` · ${role.job.department}` : ""}
+        </p>
+      </header>
+
+      <div className="space-y-12 px-6 py-8 pb-28">
+        <div className="mx-auto w-full max-w-3xl space-y-12">
           {loading ? (
             <div className="space-y-4">
-              <Skeleton className="h-28 w-full rounded-2xl" />
-              <Skeleton className="h-28 w-full rounded-2xl" />
-              <Skeleton className="h-28 w-full rounded-2xl" />
+              <Skeleton className="h-8 w-3/4" />
+              <Skeleton className="h-32 w-full" />
+              <Skeleton className="h-32 w-full" />
             </div>
           ) : null}
 
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error ? (
+            <p className="text-xl font-medium text-destructive">{error}</p>
+          ) : null}
 
-          {detail ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-bold tracking-tight text-foreground">
-                  Full listing
-                </h2>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 font-semibold"
-                  onClick={() => setShowListing((value) => !value)}
-                >
-                  {showListing ? "Hide listing" : "Show listing"}
-                </Button>
-              </div>
-
-              {showListing ? (
-                <JobListingContent
-                  html={detail.contentHtml}
-                  className="rounded-2xl border border-border bg-card p-6 shadow-sm"
-                />
-              ) : null}
+          {!loading && summaryLoading && !summary ? (
+            <div className="flex items-center gap-3 text-xl text-foreground">
+              <Loader2 className="size-6 animate-spin text-primary" />
+              Preparing summary…
             </div>
           ) : null}
 
-          {summary ? (
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold tracking-tight text-foreground">
-                AI summary
+          {!loading && summary?.roleType ? (
+            <SummarySection
+              title="What is this role?"
+              body={summary.roleType}
+            />
+          ) : null}
+
+          {!loading && summary?.dayToDay ? (
+            <SummarySection
+              title="What will you do each day?"
+              body={summary.dayToDay}
+              asList
+            />
+          ) : null}
+
+          {!loading && summary?.orgPosition ? (
+            <SummarySection
+              title="Where does this role sit?"
+              body={summary.orgPosition}
+            />
+          ) : null}
+
+          {!loading && detail ? (
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold text-foreground md:text-3xl">
+                Full job post
               </h2>
-              <div className="grid gap-4">
-                <SummaryCard title="What kind of role is this?" body={summary.roleType} />
-                <SummaryCard title="Day-to-day responsibilities" body={summary.dayToDay} />
-                <SummaryCard title="Where this role sits" body={summary.orgPosition} />
-              </div>
-            </div>
-          ) : summaryLoading ? (
-            <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-sm font-medium text-foreground">
-              <Loader2 className="size-4 animate-spin text-primary" />
-              Generating AI summary...
-            </div>
+              <JobListingContent html={detail.contentHtml} />
+            </section>
+          ) : null}
+
+          {!loading && !detail && !summaryLoading ? (
+            <p className="text-xl text-foreground">Loading job post…</p>
           ) : null}
         </div>
-      </ScrollArea>
-
-      <div className="flex items-center justify-between border-t border-border/60 px-6 py-4">
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!hasPrevious}
-          onClick={onPrevious}
-        >
-          <ChevronLeft className="mr-1 size-4" />
-          Previous
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          <kbd className="rounded border px-1.5 py-0.5">↑</kbd>{" "}
-          <kbd className="rounded border px-1.5 py-0.5">↓</kbd> to navigate
-        </p>
-        <Button size="sm" disabled={!hasNext} onClick={onNext}>
-          Next
-          <ChevronRight className="ml-1 size-4" />
-        </Button>
       </div>
-    </div>
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-6 z-50 flex justify-center px-4">
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-2xl border border-border/80 bg-white/95 px-3 py-2.5 shadow-xl backdrop-blur-md dark:bg-card/95">
+          <Button
+            size="lg"
+            variant={role.status === "liked" ? "default" : "outline"}
+            className="min-w-[5.5rem] rounded-xl shadow-sm"
+            onClick={async () => {
+              const wasLiked = role.status === "liked";
+              await setRoleStatus(
+                role.feedId,
+                wasLiked ? "read" : "liked",
+              );
+              onStatusChange();
+              if (!wasLiked) onSaved?.();
+            }}
+          >
+            <Heart
+              className={cn(
+                "mr-2 size-5",
+                role.status === "liked" && "fill-current",
+              )}
+            />
+            Save
+          </Button>
+          <Button
+            size="lg"
+            variant={role.status === "disliked" ? "default" : "outline"}
+            className="min-w-[5.5rem] rounded-xl shadow-sm"
+            onClick={async () => {
+              await setRoleStatus(
+                role.feedId,
+                role.status === "disliked" ? "read" : "disliked",
+              );
+              onStatusChange();
+            }}
+          >
+            <ThumbsDown className="mr-2 size-5" />
+            Skip
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="min-w-[5.5rem] rounded-xl shadow-sm"
+            onClick={async () => {
+              await setRoleStatus(
+                role.feedId,
+                role.status === "unread" ? "read" : "unread",
+              );
+              onStatusChange();
+            }}
+          >
+            {role.status === "unread" ? "Done" : "Undo"}
+          </Button>
+        </div>
+      </div>
+
+      <footer className="border-t border-border bg-white px-4 py-6 dark:bg-card">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <Button
+            variant="outline"
+            size="lg"
+            disabled={!hasPrevious}
+            onClick={onPrevious}
+          >
+            <ChevronLeft className="mr-1 size-5" />
+            Previous role
+          </Button>
+          <Button size="lg" disabled={!hasNext} onClick={onNext}>
+            Next role
+            <ChevronRight className="ml-1 size-5" />
+          </Button>
+        </div>
+      </footer>
+    </article>
   );
 }
